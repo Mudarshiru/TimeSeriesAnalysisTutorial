@@ -5,7 +5,10 @@ from uuid import uuid4
 
 
 ROOT = Path(__file__).resolve().parent
-REFERENCE = ROOT / "reference.ipynb"
+TARGET_NOTEBOOKS = [
+    ROOT / "analysis.ipynb",
+    ROOT / "analysis_year.ipynb",
+]
 
 
 def code_cell(source: str):
@@ -28,20 +31,17 @@ def markdown_cell(source: str):
     }
 
 
-def main():
-    nb = json.loads(REFERENCE.read_text(encoding="utf-8"))
+def update_notebook(notebook_path: Path):
+    nb = json.loads(notebook_path.read_text(encoding="utf-8"))
     cells = nb["cells"]
 
-    # Reset code execution metadata/outputs.
     for cell in cells:
         if cell.get("cell_type") == "code":
             cell["execution_count"] = None
             cell["outputs"] = []
 
-    # Title
     cells[0]["source"] = ["# Kampala Air Quality and TB Analysis - LSTM Pipeline\n"]
 
-    # Imports
     cells[1]["source"] = [
         "# Import required libraries\n",
         "import pandas as pd\n",
@@ -61,7 +61,6 @@ def main():
         "warnings.filterwarnings('ignore')\n",
     ]
 
-    # Local modules
     cells[2]["source"] = [
         "# Import simplified modules\n",
         "import sys\n",
@@ -77,10 +76,9 @@ def main():
         "plt.style.use('seaborn-v0_8-darkgrid')\n",
         "sns.set_palette('husl')\n",
         "\n",
-        "print('✓ All modules imported successfully')\n",
+        "print('All modules imported successfully')\n",
     ]
 
-    # Data loading
     cells[3]["source"] = [
         "# ## Step 1: Load and Process Data\n",
         "\n",
@@ -89,10 +87,9 @@ def main():
         "\n",
         "# Load the merged data\n",
         "data = processor.load_data('./data/merged_climate_tb_data.csv')\n",
-        "print(f'✓ Loaded data: {len(data)} records')\n",
+        "print(f'Loaded data: {len(data)} records')\n",
     ]
 
-    # Add engineered features after local processor features.
     cells[4]["source"] = [
         "# Add lag features and rolling averages\n",
         "processed_data = processor.add_lag_features()\n",
@@ -113,22 +110,20 @@ def main():
         "processed_data['sin_month'] = np.sin(2 * np.pi * processed_data['month'] / 12)\n",
         "processed_data['cos_month'] = np.cos(2 * np.pi * processed_data['month'] / 12)\n",
         "\n",
-        "print(f'✓ Added features: {processed_data.shape[1]} total columns')\n",
+        "print(f'Added features: {processed_data.shape[1]} total columns')\n",
     ]
 
-    # Summary
     cells[5]["source"] = [
         "# Get summary statistics\n",
         "summary = processor.get_summary_statistics()\n",
         "print('\\nData Summary:')\n",
         "print(f\"- Date range: {summary['date_range']}\")\n",
         "print(f\"- Total records: {summary['total_records']}\")\n",
-        "print(f\"- Average PM2.5: {summary['pm25_statistics']['mean']:.2f} μg/m³\")\n",
+        "print(f\"- Average PM2.5: {summary['pm25_statistics']['mean']:.2f} ug/m3\")\n",
         "print(f\"- Total TB cases: {summary['tb_statistics']['total_cases']:.2f}\")\n",
         "print(f\"- PM2.5-TB correlation: {summary['correlation_pm25_tb']:.3f}\")\n",
     ]
 
-    # Preview columns
     cells[6]["source"] = [
         "# Display first few rows including engineered features\n",
         "preview_cols = [\n",
@@ -141,29 +136,28 @@ def main():
         "processed_data[preview_cols].head(10)\n",
     ]
 
-    # Time series plot
     cells[8]["source"] = [
         "# Time series plot\n",
         "fig, axes = plt.subplots(3, 1, figsize=(14, 10))\n",
         "\n",
-        "axes[0].plot(data['date'], data['pm2_5'], color='blue', alpha=0.7)\n",
+        "axes[0].plot(processed_data['date'], processed_data['pm2_5'], color='blue', alpha=0.7)\n",
         "axes[0].axhline(y=15, color='red', linestyle='--', label='WHO Guideline (24-hour average)')\n",
         "axes[0].axhline(y=5, color='orange', linestyle='--', label='WHO Guideline (annual average)')\n",
         "axes[0].set_title('PM2.5 Levels in Kampala')\n",
-        "axes[0].set_ylabel('PM2.5 (μg/m³)')\n",
+        "axes[0].set_ylabel('PM2.5')\n",
         "axes[0].legend()\n",
         "axes[0].grid(True, alpha=0.3)\n",
         "\n",
-        "axes[1].plot(data['date'], data['TB'], color='darkgreen', alpha=0.7)\n",
+        "axes[1].plot(processed_data['date'], processed_data['TB'], color='darkgreen', alpha=0.7)\n",
         "axes[1].set_title('TB Cases')\n",
         "axes[1].set_ylabel('Number of Cases')\n",
         "axes[1].grid(True, alpha=0.3)\n",
         "\n",
         "ax2_twin = axes[2].twinx()\n",
-        "axes[2].plot(data['date'], data['avgtemp'], color='orange', label='Temperature')\n",
-        "ax2_twin.plot(data['date'], data['avghumidity'], color='cyan', label='Humidity')\n",
+        "axes[2].plot(processed_data['date'], processed_data['avgtemp'], color='orange', label='Temperature')\n",
+        "ax2_twin.plot(processed_data['date'], processed_data['avghumidity'], color='cyan', label='Humidity')\n",
         "axes[2].set_title('Weather Conditions')\n",
-        "axes[2].set_ylabel('Temperature (°C)', color='orange')\n",
+        "axes[2].set_ylabel('Temperature', color='orange')\n",
         "ax2_twin.set_ylabel('Humidity (%)', color='cyan')\n",
         "axes[2].set_xlabel('Date')\n",
         "axes[2].grid(True, alpha=0.3)\n",
@@ -172,7 +166,6 @@ def main():
         "plt.show()\n",
     ]
 
-    # Correlation
     cells[9]["source"] = [
         "# Correlation analysis\n",
         "correlation_vars = [\n",
@@ -181,7 +174,7 @@ def main():
         "    'precip_rolling_4', 'windspeed_rolling_4', 'pm25_temp_ratio',\n",
         "    'pm25_humidity_ratio', 'tb_pct_change_1', 'tb_diff_1'\n",
         "]\n",
-        "corr_matrix = data[correlation_vars].corr()\n",
+        "corr_matrix = processed_data[correlation_vars].corr()\n",
         "\n",
         "plt.figure(figsize=(12, 8))\n",
         "sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', center=0, square=True, fmt='.2f')\n",
@@ -190,26 +183,24 @@ def main():
         "plt.show()\n",
     ]
 
-    # Scatter
     cells[10]["source"] = [
         "# PM2.5 vs TB scatter plot with regression line\n",
         "plt.figure(figsize=(10, 6))\n",
-        "plt.scatter(data['pm2_5'], data['TB'], alpha=0.5, color='blue')\n",
+        "plt.scatter(processed_data['pm2_5'], processed_data['TB'], alpha=0.5, color='blue')\n",
         "\n",
-        "z = np.polyfit(data['pm2_5'], data['TB'], 1)\n",
+        "z = np.polyfit(processed_data['pm2_5'], processed_data['TB'], 1)\n",
         "p = np.poly1d(z)\n",
-        "plt.plot(data['pm2_5'], p(data['pm2_5']), 'r--', alpha=0.8, label=f'y={z[0]:.2f}x+{z[1]:.2f}')\n",
+        "plt.plot(processed_data['pm2_5'], p(processed_data['pm2_5']), 'r--', alpha=0.8, label=f'y={z[0]:.2f}x+{z[1]:.2f}')\n",
         "\n",
-        "corr, p_value = stats.pearsonr(data['pm2_5'], data['TB'])\n",
+        "corr, p_value = stats.pearsonr(processed_data['pm2_5'], processed_data['TB'])\n",
         "plt.title(f'PM2.5 vs TB Cases (r={corr:.3f}, p={p_value:.4f})')\n",
-        "plt.xlabel('PM2.5 (μg/m³)')\n",
+        "plt.xlabel('PM2.5')\n",
         "plt.ylabel('TB Cases')\n",
         "plt.legend()\n",
         "plt.grid(True, alpha=0.3)\n",
         "plt.show()\n",
     ]
 
-    # ITS preprocessing
     cells[12]["source"] = [
         "# --- 1. Data Preprocessing ---\n",
         "\n",
@@ -217,6 +208,7 @@ def main():
         "data_itsa['date'] = pd.to_datetime(data_itsa['date'], errors='coerce')\n",
         "data_itsa = data_itsa.sort_values('date').set_index('date')\n",
     ]
+
     cells[13]["source"] = [
         "# --- 2. Handle Missing Data ---\n",
         "\n",
@@ -228,6 +220,7 @@ def main():
         "print('\\n--- Missing Values After Handling ---')\n",
         "print(data_itsa.isnull().sum())\n",
     ]
+
     cells[14]["source"] = [
         "# --- 3. Define the Intervention Point ---\n",
         "\n",
@@ -237,6 +230,7 @@ def main():
         "print(f'\\nThe dataset has {len(data_itsa)} data points.')\n",
         "print(f'The intervention is set at index {intervention_point}, which corresponds to the date: {intervention_date.date()}')\n",
     ]
+
     cells[15]["source"] = [
         "# --- 4. Create Interrupted Time Series (ITS) Variables ---\n",
         "\n",
@@ -248,7 +242,6 @@ def main():
         "data_itsa.loc[post_intervention_indices, 'time_since_intervention'] = time_since_intervention_values\n",
     ]
 
-    # LSTM model
     cells[16]["source"] = [
         "# --- 5. LSTM Modeling for predicted_tb ---\n",
         "\n",
@@ -331,14 +324,12 @@ def main():
         "print(f'MAE: {mae:.2f}')\n",
     ]
 
-    # Clear blank cell 17.
     cells[17] = code_cell(
         """
 data_itsa.index = pd.to_datetime(data_itsa.index, errors='coerce')
 """
     )
 
-    # Advanced visualization
     cells[18]["source"] = [
         "# --- 6. Advanced Visualization ---\n",
         "\n",
@@ -363,11 +354,10 @@ data_itsa.index = pd.to_datetime(data_itsa.index, errors='coerce')
         "plt.show()\n",
     ]
 
-    # Monthly patterns
     cells[20]["source"] = [
         "# Monthly patterns\n",
-        "data['month'] = data['date'].dt.month\n",
-        "monthly_stats = data.groupby('month').agg({\n",
+        "processed_data['month'] = processed_data['date'].dt.month\n",
+        "monthly_stats = processed_data.groupby('month').agg({\n",
         "    'pm2_5': ['mean', 'std'],\n",
         "    'TB': ['mean', 'sum'],\n",
         "    'avgtemp': 'mean',\n",
@@ -379,7 +369,7 @@ data_itsa.index = pd.to_datetime(data_itsa.index, errors='coerce')
         "axes[0, 0].errorbar(range(1, 13), monthly_stats['pm2_5']['mean'].values, yerr=monthly_stats['pm2_5']['std'].values, fmt='none', color='black', alpha=0.5)\n",
         "axes[0, 0].set_title('Average PM2.5 by Month')\n",
         "axes[0, 0].set_xlabel('Month')\n",
-        "axes[0, 0].set_ylabel('PM2.5 (μg/m³)')\n",
+        "axes[0, 0].set_ylabel('PM2.5')\n",
         "axes[0, 0].set_xticks(range(1, 13))\n",
         "\n",
         "axes[0, 1].bar(range(1, 13), monthly_stats['TB']['sum'].values, color='green', alpha=0.7)\n",
@@ -391,7 +381,7 @@ data_itsa.index = pd.to_datetime(data_itsa.index, errors='coerce')
         "axes[1, 0].plot(range(1, 13), monthly_stats['avgtemp']['mean'].values, 'o-', color='orange')\n",
         "axes[1, 0].set_title('Average Temperature by Month')\n",
         "axes[1, 0].set_xlabel('Month')\n",
-        "axes[1, 0].set_ylabel('Temperature (°C)')\n",
+        "axes[1, 0].set_ylabel('Temperature')\n",
         "axes[1, 0].set_xticks(range(1, 13))\n",
         "axes[1, 0].grid(True, alpha=0.3)\n",
         "\n",
@@ -407,7 +397,6 @@ data_itsa.index = pd.to_datetime(data_itsa.index, errors='coerce')
         "plt.show()\n",
     ]
 
-    # Replace tail with coherent later sections.
     tail_cells = [
         markdown_cell("## Step 5: Time Series Modeling"),
         code_cell(
@@ -520,7 +509,7 @@ for scenario_name, params in scenarios.items():
     results.append({
         'Scenario': scenario_name,
         'PM2.5 Reduction (%)': params['reduction'] * 100,
-        'Final PM2.5 (μg/m³)': reduced_pm25,
+        'Final PM2.5': reduced_pm25,
         'TB Cases Prevented': tb_cases_prevented,
         'Cost Factor': params['cost_factor'],
         'Cost per Case Prevented ($)': cost_per_case
@@ -578,7 +567,7 @@ print('1. DATA OVERVIEW')
 print('-' * 40)
 print(f"   - Analysis Period: {summary['date_range']}")
 print(f"   - Total Records: {summary['total_records']}")
-print(f"   - Average PM2.5: {summary['pm25_statistics']['mean']:.2f} μg/m³")
+print(f"   - Average PM2.5: {summary['pm25_statistics']['mean']:.2f}")
 print(f"   - Total TB Cases: {summary['tb_statistics']['total_cases']:.2f}")
 print()
 print('2. KEY FINDINGS')
@@ -611,7 +600,7 @@ results_dir = Path('./results')
 results_dir.mkdir(exist_ok=True)
 results_df.to_csv(results_dir / 'intervention_scenarios.csv', index=False)
 models_performance.to_csv(results_dir / 'model_performance.csv', index=False)
-print('✓ Results saved to ./results/')
+print('Results saved to ./results/')
 """
         ),
     ]
@@ -619,14 +608,18 @@ print('✓ Results saved to ./results/')
     cells = cells[:21] + tail_cells
     nb["cells"] = cells
 
-    # Sanity-check code syntax.
     for idx, cell in enumerate(cells):
         if cell.get("cell_type") == "code":
             source = "".join(cell.get("source", []))
-            ast.parse(source, filename=f"reference_cell_{idx}.py")
+            ast.parse(source, filename=f"{notebook_path.stem}_cell_{idx}.py")
 
-    REFERENCE.write_text(json.dumps(nb, ensure_ascii=False, indent=1), encoding="utf-8")
-    print(f"Updated {REFERENCE.name} with {len(cells)} cells.")
+    notebook_path.write_text(json.dumps(nb, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(f"Updated {notebook_path.name} with {len(cells)} cells.")
+
+
+def main():
+    for notebook_path in TARGET_NOTEBOOKS:
+        update_notebook(notebook_path)
 
 
 if __name__ == "__main__":
