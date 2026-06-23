@@ -10,6 +10,7 @@ import logging
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score
 from sklearn.preprocessing import StandardScaler
+from sklearn.impute import SimpleImputer
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.svm import SVC
 import warnings
@@ -34,6 +35,8 @@ class TimeSeriesModeler:
         self.results = {}
         self.best_model = None
         self.feature_importance = {}
+        self.imputer = None
+        self.scaler = None
         logger.info(f"TimeSeriesModeler initialized with {len(data)} records, target: {target_column}")
     
     def prepare_time_series_data(self, window_size: int = 12,
@@ -83,11 +86,17 @@ class TimeSeriesModeler:
                 for feature in features:
                     if feature in window.columns:
                         window_features.extend(window[feature].values)
-                
-                X_list.append(window_features)
+
+                if not window_features:
+                    continue
+
+                window_array = np.asarray(window_features, dtype=float)
                 
                 # Create target
                 target_value = county_data[self.target_column].iloc[i + window_size]
+
+                if not np.isfinite(window_array).any() or not np.isfinite(target_value):
+                    continue
                 
                 if target_type == 'binary':
                     # Binary classification: above/below median
@@ -106,7 +115,8 @@ class TimeSeriesModeler:
                         y_label = 3  # High
                 else:
                     y_label = target_value  # Regression
-                
+
+                X_list.append(window_array)
                 y_list.append(y_label)
         
         X = np.array(X_list)
@@ -134,6 +144,15 @@ class TimeSeriesModeler:
         if len(X) == 0:
             logger.warning("No data available for training")
             return {}
+
+        if not np.isfinite(y).all():
+            valid_rows = np.isfinite(y)
+            X = X[valid_rows]
+            y = y[valid_rows]
+
+        if len(X) == 0:
+            logger.warning("No valid target values available for training")
+            return {}
         
         # Default models
         if models_to_train is None:
@@ -158,13 +177,21 @@ class TimeSeriesModeler:
             )
         }
         
+        # Impute and scale features so sklearn models can train on lagged windows
+        # that still contain missing values.
+        self.imputer = SimpleImputer(strategy='median')
+        X_imputed = self.imputer.fit_transform(X)
+
+        self.scaler = StandardScaler()
+        X_scaled = self.scaler.fit_transform(X_imputed)
+
         # Try to use sktime models if available
         try:
             from sktime.classification.interval_based import TimeSeriesForestClassifier
             from sktime.classification.kernel_based import RocketClassifier
             
             # Reshape for sktime
-            X_sktime = X.reshape(X.shape[0], 1, X.shape[1])
+            X_sktime = X_scaled.reshape(X_scaled.shape[0], 1, X_scaled.shape[1])
             
             model_dict.update({
                 'ts_forest': TimeSeriesForestClassifier(
@@ -180,10 +207,6 @@ class TimeSeriesModeler:
         except ImportError:
             logger.info("sktime not available, using sklearn models only")
             use_sktime = False
-        
-        # Scale features
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X)
         
         # Time series cross-validation
         tscv = TimeSeriesSplit(n_splits=cv_splits)
@@ -291,10 +314,11 @@ class TimeSeriesModeler:
                 raise ValueError(f"Model {model_name} not found")
             model = self.models[model_name]
         
-        # Scale features
-        scaler = StandardScaler()
-        scaler.fit(X_new)
-        X_scaled = scaler.transform(X_new)
+        if self.imputer is None or self.scaler is None:
+            raise ValueError("No fitted preprocessing available. Train models first.")
+
+        X_imputed = self.imputer.transform(X_new)
+        X_scaled = self.scaler.transform(X_imputed)
         
         return model.predict(X_scaled)
     
