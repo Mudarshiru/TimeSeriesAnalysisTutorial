@@ -11,3 +11,4 @@ plotly
 xlrd
 openpyxl
 sktime
+geopandas 

@@ -1,0 +1,4 @@
+Model,Accuracy,F1 Score,Precision,Recall
+random_forest,,,,
+gradient_boosting,,,,
+svm,,,,
